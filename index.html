@@ -16,6 +16,7 @@
   window.claude = { use: function (n) { return Promise.resolve(n === "db" ? db : null); } };
 })();
 </script>
+<script>window.PESSOAL = true;</script>
 <title>FRL Cinema</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="theme-color" content="#3A3D43">
@@ -66,7 +67,12 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
   margin-inline: calc(-1 * max(16px, env(safe-area-inset-left, 0px)));
   padding: 26px max(16px, env(safe-area-inset-left, 0px)) 76px;
 }
-.hero-in { max-width: 640px; margin: 0 auto; }
+.hero-in { max-width: 640px; margin: 0 auto; position: relative; }
+.modobtn { position: absolute; top: 0; right: 0; font: 600 12px var(--font); color: var(--hero-ink); background: transparent; border: 1px solid var(--hero-muted); border-radius: 99px; padding: 6px 12px; min-height: 32px; cursor: pointer; }
+.modobtn[hidden] { display: none; }
+body.publico .pickbtn, body.publico .pick { display: none !important; }
+body.publico li.is-pick .t::after { content: none !important; }
+body.previa .est button { pointer-events: none; }
 .brand { display: flex; align-items: center; gap: 14px; }
 .mark { width: 52px; height: 52px; flex: none; }
 .brand-t { display: flex; flex-direction: column; line-height: 1; }
@@ -152,6 +158,21 @@ details:not(.pick-on) li.is-pick .t::after { content: none; }
 .vtag { display: inline-block; margin-top: 8px; font-size: 12px; font-weight: 700; color: var(--bronze); background: var(--bronze-soft); border-radius: 99px; padding: 2px 10px; }
 .vnote { font-size: 13px; color: var(--muted); margin-top: 4px; overflow-wrap: anywhere; }
 li.visto .t { opacity: .75; }
+.nomebox { margin: 18px 0 0; padding: 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.nomebox[hidden] { display: none; }
+.nomebox b { font-size: 15px; }
+.nomebox span { font-size: 13px; color: var(--muted); }
+.nomebox .row { display: flex; gap: 8px; }
+.nomebox input { flex: 1; min-width: 0; font: 400 16px var(--font); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-height: 44px; }
+.nomebox button { font: 700 14px var(--font); min-height: 44px; padding: 8px 16px; border-radius: 99px; background: var(--hero); color: var(--hero-ink); border: 0; cursor: pointer; }
+.quem { margin: 14px 2px 0; font-size: 13px; color: var(--muted); }
+.quem[hidden] { display: none; }
+.quem button { font: 600 13px var(--font); color: var(--bronze); background: none; border: 0; padding: 4px 6px; cursor: pointer; text-decoration: underline; }
+.est { display: flex; align-items: center; gap: 2px; margin-top: 8px; flex-wrap: wrap; }
+.est button { font-size: 26px; line-height: 1; width: 40px; height: 40px; background: none; border: 0; padding: 0; cursor: pointer; color: var(--line); }
+.est button.on { color: var(--bronze); }
+.est .media { font-size: 13px; color: var(--muted); margin-left: 6px; }
+.est .media b { color: var(--bronze); font-weight: 700; }
 footer { margin-top: 22px; font-size: 12px; color: var(--muted); text-align: center; }
 @media (prefers-reduced-motion: no-preference) { .chev { transition: transform .15s; } }
 </style>
@@ -159,6 +180,7 @@ footer { margin-top: 22px; font-size: 12px; color: var(--muted); text-align: cen
 <div class="wrap">
   <header class="hero">
     <div class="hero-in">
+      <button type="button" class="modobtn" id="modo" hidden></button>
       <div class="brand">
         <svg class="mark" viewBox="0 0 180 180" role="img" aria-label="Logo de filme">
           <rect width="180" height="180" rx="40" fill="#F1EFEB" fill-opacity=".1"/>
@@ -184,6 +206,12 @@ footer { margin-top: 22px; font-size: 12px; color: var(--muted); text-align: cen
     </div>
     <input class="search" id="busca" type="search" placeholder="Buscar por título ou país" aria-label="Buscar">
   </div>
+  <div class="nomebox" id="nomebox" hidden>
+    <b>Qual é o seu nome?</b>
+    <span>Assim eu sei quem está usando e você pode dar de 1 a 5 estrelas nos filmes.</span>
+    <div class="row"><input id="nome" type="text" maxlength="60" autocomplete="given-name" placeholder="Seu nome" aria-label="Seu nome"><button type="button" id="nome-ok">Entrar</button></div>
+  </div>
+  <p class="quem" id="quem" hidden></p>
   <p class="aviso" id="aviso"></p>
   <div id="lista" role="tabpanel"></div>
   <footer>Atualizado em 2026-11-13. Notas do IMDb escritas de memória, sem conferir.</footer>
@@ -289,7 +317,7 @@ const descr = (i) => (window.PUBLICO && SINOPSE[i[0]]) || i[3];
 const $ = (s) => document.querySelector(s);
 let view = "quero-ver";
 const VOTOS = { indicar: "Vi, gostei e indico", gostei: "Vi e gostei (não indico)", indiferente: "Vi, indiferente", "nao-gostei": "Vi e não gostei" };
-let db = null, votos = {}, aberto = null, rascunho = { voto: "", nota: "", titulo: "" };
+let db = null, votos = {}, votosReal = {}, aberto = null, rascunho = { voto: "", nota: "", titulo: "" };
 const slug = (s) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
 const count = (k) => DATA[k].grupos.reduce((n, g) => n + g.itens.length, 0);
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -348,7 +376,7 @@ function render() {
       const id = slug(i[0]), vt = votos[id];
       const cls = [g.pick && i[0] === g.pick[0] ? "is-pick" : "", vt ? "visto" : ""].filter(Boolean).join(" ");
       let extra = "";
-      if (db && view !== "indicar" && !i[4]) {
+      if (db && !window.PUBLICO && view !== "indicar" && !i[4]) {
         if (vt) extra += `<span class="vtag">${esc(VOTOS[vt.voto] || vt.voto)}</span>${vt.nota ? `<div class="vnote">${esc(vt.nota)}</div>` : ""}`;
         if (aberto === id) {
           extra += `<div class="vote" data-id="${id}"><div class="opts">${Object.entries(VOTOS).map(([k, r]) => `<button type="button" data-voto="${k}" aria-pressed="${rascunho.voto === k}">${esc(r)}</button>`).join("")}</div><textarea placeholder="Por quê? (se quiser)" aria-label="Observação">${esc(rascunho.nota)}</textarea><div class="acts"><button type="button" class="save" ${rascunho.voto ? "" : "disabled"}>Salvar</button><button type="button" class="cancel">Cancelar</button>${vt ? '<button type="button" class="clear">Tirar voto</button>' : ""}</div></div>`;
@@ -356,7 +384,7 @@ function render() {
           extra += `<div><button type="button" class="vistobtn" data-abrir="${id}" data-titulo="${esc(i[0])}">${vt ? "Mudar voto" : "Já vi"}</button></div>`;
         }
       }
-      return `<li${cls ? ` class="${cls}"` : ""}><div class="t">${esc(i[0])}</div><div class="m"><span>${esc(i[1])}</span>${i[2] ? `<span class="rate">${esc(i[2])}</span>` : ""}</div>${descr(i) ? `<div class="d">${esc(descr(i))}</div>` : ""}${extra}</li>`;
+      return `<li${cls ? ` class="${cls}"` : ""}><div class="t">${esc(i[0])}</div><div class="m"><span>${esc(i[1])}</span>${i[2] ? `<span class="rate">${esc(i[2])}</span>` : ""}</div>${descr(i) ? `<div class="d">${esc(descr(i))}</div>` : ""}${window.PUBLICO && view !== "vistos" ? estrelasHtml(i) : ""}${extra}</li>`;
     }).join("") + "</ul></details>";
   }
   $("#lista").innerHTML = total ? html : '<p class="empty">Nada encontrado.</p>';
@@ -402,8 +430,63 @@ $("#lista").addEventListener("click", async (e) => {
   } catch (err) { alert("Não consegui salvar o voto agora. Tente de novo."); return; }
   render();
 });
+
+// Estrelas das clientes (só na versão pública): nome e nota vão pro Worker frl-filmes; a média volta pra todo mundo.
+const API = "https://frl-filmes.fichas-frl.workers.dev";
+let nome = "", minhas = {}, medias = {};
+const ls = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+function estrelasHtml(i) {
+  const id = slug(i[0]), m = medias[id], mine = minhas[id] || 0;
+  let h = `<div class="est" data-id="${id}" data-titulo="${esc(i[0])}" role="group" aria-label="Estrelas para ${esc(i[0])}">`;
+  for (let n = 1; n <= 5; n++) h += `<button type="button" data-n="${n}" class="${n <= mine ? "on" : ""}" aria-label="${n} estrela${n > 1 ? "s" : ""}">★</button>`;
+  h += `<span class="media">${m ? `<b>${String(m.m).replace(".", ",")}</b> · ${m.n} ${m.n > 1 ? "notas" : "nota"}` : "Sem notas ainda"}</span></div>`;
+  return h;
+}
+function nomeUI() {
+  $("#nomebox").hidden = !!nome;
+  $("#quem").hidden = !nome;
+  $("#quem").innerHTML = nome ? `Oi, ${esc(nome)}. <button type="button" id="trocar">Não sou eu</button>` : "";
+}
+async function carregarMedias() {
+  try { const r = await fetch(API + "/medias"); if (r.ok) { medias = await r.json(); render(); } } catch (e) {}
+}
+const REAL = !!window.PUBLICO;
+if (REAL || window.PESSOAL) carregarMedias();
+if (REAL) {
+  nome = ls.get("frl-cinema-nome") || "";
+  try { minhas = JSON.parse(ls.get("frl-cinema-minhas") || "{}"); } catch (e) { minhas = {}; }
+  nomeUI();
+  const entrar = () => { const v = $("#nome").value.trim(); if (!v) return; nome = v; ls.set("frl-cinema-nome", v); nomeUI(); };
+  $("#nome-ok").addEventListener("click", entrar);
+  $("#nome").addEventListener("keydown", (e) => { if (e.key === "Enter") entrar(); });
+  document.addEventListener("click", (e) => { if (e.target.id === "trocar") { nome = ""; ls.set("frl-cinema-nome", ""); minhas = {}; ls.set("frl-cinema-minhas", "{}"); nomeUI(); render(); $("#nome").focus(); } });
+  $("#lista").addEventListener("click", async (e) => {
+    const b = e.target.closest(".est button");
+    if (!b) return;
+    if (!nome) { window.scrollTo({ top: 0, behavior: "smooth" }); $("#nome").focus(); return; }
+    const box = b.closest(".est"), id = box.dataset.id, n = Number(b.dataset.n);
+    try {
+      const r = await fetch(API + "/voto", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nome, filme: id, titulo: box.dataset.titulo, estrelas: n }) });
+      if (!r.ok) throw new Error();
+      minhas[id] = n; ls.set("frl-cinema-minhas", JSON.stringify(minhas));
+      await carregarMedias(); render();
+    } catch (err) { alert("Não consegui salvar sua nota agora. Tente de novo."); }
+  });
+}
+// Só na versão pessoal: botão que mostra a página como as clientes veem (sem botões, com sinopse e estrelas, sem comentários).
+function setModo(pub) {
+  window.PUBLICO = pub;
+  document.body.classList.toggle("publico", pub);
+  document.body.classList.toggle("previa", pub && !REAL);
+  votos = pub ? {} : votosReal;
+  if (pub && view === "vistos") view = "quero-ver";
+  $("#tab-vis").hidden = pub || !db;
+  $("#modo").textContent = pub ? "Voltar pra minha versão" : "Ver como cliente";
+  setView(view, true);
+}
+if (window.PESSOAL) { $("#modo").hidden = false; $("#modo").addEventListener("click", () => setModo(!window.PUBLICO)); setModo(false); }
 const VIEWS = ["quero-ver", "indicar", "vistos"];
-window.addEventListener("hashchange", () => { const h = location.hash.slice(1); if (VIEWS.includes(h) && (h !== "vistos" || db)) setView(h, true); });
+window.addEventListener("hashchange", () => { const h = location.hash.slice(1); if (VIEWS.includes(h) && (h !== "vistos" || (db && !window.PUBLICO))) setView(h, true); });
 { const h = location.hash.slice(1); setView(h === "indicar" ? h : "quero-ver", true); }
 // Votos: só aparecem pra quem pode gravar (o dono). Sem o banco, a página funciona igual, sem os botões.
 (async () => {
@@ -411,25 +494,11 @@ window.addEventListener("hashchange", () => { const h = location.hash.slice(1); 
     const c = window.claude && (await claude.use("db"));
     if (!c) return;
     db = c;
-    $("#tab-vis").hidden = false;
+    $("#tab-vis").hidden = !!window.PUBLICO;
     db.collection("votos").onSnapshot((snap) => {
       const m = {};
       snap.forEach((d) => { m[d.id] = d.data(); });
-      votos = m; render();
-    }, () => {});
-    render();
-  } catch (e) { db = null; }
-})();
-// Votos: só aparecem pra quem pode gravar (o dono). Sem o banco, a página funciona igual, sem os botões.
-(async () => {
-  try {
-    const c = window.claude && (await claude.use("db"));
-    if (!c) return;
-    db = c;
-    db.collection("votos").onSnapshot((snap) => {
-      const m = {};
-      snap.forEach((d) => { m[d.id] = d.data(); });
-      votos = m; render();
+      votosReal = m; votos = window.PUBLICO ? {} : m; render();
     }, () => {});
     render();
   } catch (e) { db = null; }
